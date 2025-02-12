@@ -7,35 +7,12 @@ import sqlite3
 import re
 
 
-def execute_db_query(connection, query: str, values: tuple = None) -> None:
-    """Executes a SQL query on the Sqlite3 database
-
-    Args:
-        connection: A database connection object
-        query: The SQL query as a string
-        values: A tuple of values to be inserted into the query
-
-    Returns:
-        Nothing.
-    """
-    cursor = connection.cursor()
-    try:
-        if values:
-            cursor.execute(query, values)
-        else:
-            cursor.execute(query)
-        connection.commit()
-    except sqlite3.Error as e:
-        print(f"The error '{e}' occurred")
-
-
-def create_db(connection):
+def create_db(cursor):
     """
     Create the main table if it doesn't exist.
     """
 
-    execute_db_query(
-        connection,
+    cursor.execute(
         """CREATE TABLE IF NOT EXISTS games (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             Event TEXT,
@@ -135,7 +112,7 @@ def build_pgn_dict(pgn: str) -> dict:
     return game_dict
 
 
-def save_game_to_db(connection, pgn: dict) -> None:
+def save_game_to_db(cursor, pgn: dict) -> None:
     """Saves a Game to the Sqlite3 database
 
     Args:
@@ -146,8 +123,7 @@ def save_game_to_db(connection, pgn: dict) -> None:
         Nothing.
     """
 
-    execute_db_query(
-        connection,
+    cursor.execute(
         """INSERT INTO
         games(Event, Site, Round, White, Black, Result, UTCDate, 
         UTCTime, UTCDateTime, WhiteElo, BlackElo, WhiteRatingDiff, BlackRatingDiff, 
@@ -180,7 +156,7 @@ def save_game_to_db(connection, pgn: dict) -> None:
     )
 
 
-def save_games_to_db(connection, pgn_file):
+def save_games_to_db(cursor, pgn_file):
     """
     Opens a pgn file, fetches lines from it one by one until it reaches the end of
     a game, then inserts that game into db, and continues
@@ -199,13 +175,15 @@ def save_games_to_db(connection, pgn_file):
             # then 'clear' the game so we can fetch the next game
             if previous_line.startswith("1. "):
                 pgn_dict = build_pgn_dict(game_text)
-                save_game_to_db(connection, pgn_dict)
+                save_game_to_db(cursor, pgn_dict)
                 game_text = ""
             previous_line = line
 
 
 if __name__ == "__main__":
-    con = sqlite3.connect("data.db")
-    create_db(con)
-    save_games_to_db(con, "data/lichess_db_standard_rated_2013-01.pgn")
-    con.close()
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    create_db(cursor)
+    save_games_to_db(cursor, "../data/lichess_db_standard_rated_2013-01.pgn")
+    conn.commit()
+    conn.close()
