@@ -6,58 +6,91 @@
 # By Emma Bingham
 # Feb 2025
 
-import sqlite3
-import io
 import chess
-import chess.pgn
-import chess.engine
+import numpy as np
 
 
-# Open a connection to the sqlite db
-conn = conn = sqlite3.connect("data.db")
-cursor = conn.cursor()
+def gameeval(game, engine, depth=10):
+    """
+    Calculate evaluations for each move in the mainline game.
+    engine: the engine we are using for calculation
+    game: the chess game object from python-chess library
+    depth = default 10 # depth parameter for stockfish engine
 
-# Select a game to look at
-query = "SELECT * FROM games"
-res = cursor.execute(query)
-game_text = res.fetchall()[0]
+    Returns: two lists of evals as centipawns, (win, draw, loss) for each move.
+    Note that scores are all from white's perspective.
+    """
 
-# Print the moves
-print("Moves: ", game_text[-1])
-print("-----------")
+    centipawns = []
+    wdls = []
+    for i, mainline_node in enumerate(game.mainline()):
+        if mainline_node.is_end(): # break if it's the ending node
+            break
+        if i == 0: # analyze using empty board if it's the starting node
+            analysis = engine.analyse(chess.Board(), chess.engine.Limit(depth=depth), root_moves=[mainline_node.move])
+        else: # analyze the next move with the current board
+            analysis = engine.analyse(mainline_node.board(), chess.engine.Limit(depth=depth), root_moves=[mainline_node[0].move])
+        score = analysis["score"].white()
+        centipawns.append(score.score(mate_score=100000))
+        wdls.append(tuple(score.wdl()))
 
-# Read game pgn string into python-chess library
-pgn = io.StringIO(game_text[-1])
-game = chess.pgn.read_game(pgn)
+    return np.asarray(centipawns), np.asarray(wdls)
 
-# Make evaluations of position using stockfish
-# Path to stockfish engine
-engine = chess.engine.SimpleEngine.popen_uci("/usr/local/Cellar/stockfish/17/bin/stockfish")
 
-# Make board
-board = chess.Board()
-# Make updated pgn game we will write stockfish evals to
-updated_game = chess.pgn.Game()
-for i, move in enumerate(game.mainline_moves()): 
-    # Push current move to board
-    board.push(move)
-    # Analyze current board position
-    info = engine.analyse(board, chess.engine.Limit(time=0.1)) # can also do chess.engine.Limit(depth=20)
-    # print(str(move))
-    # print("Score:", info["score"].white()) # from White's POV
-    # print("--")
+def landscapeeval(game, engine, k=3, d=2, depth=10):
+    """
+    Calculate tree of moves and their evaluations for each move in the mainline game.
+    engine: the engine we are using for calculation
+    game: the chess game object from python-chess library
+    params (total tree size is maximum k**d):
+    k = 3 # number of branches off each node
+    d = 2 # depth of tree
+    depth = 10 # depth parameter for stockfish engine
 
-    # Write evaluations into the updated PGN game text
-    if i == 0:
-        node = updated_game.add_variation(move)
-    else:
-        node = node.add_variation(move)
-    node.comment = f"[%eval {str(info['score'].white())}]"
+    Returns: list of (nodes, edges) of tree for each mainline move.
+    Note that scores are all from white's perspective.
+    """
+    
+    landscape = [] # consists of list of tuples of (nodes, edges) for each mainline move
+    for mainline_node in game.mainline():
+        if mainline_node.is_end(): # if it's the last move, we don't need to keep going with the loop
+            break
 
-# Print updated PGN with eval scores
-print("Moves with eval: ", updated_game.variations[0])
+        # for our altnerate data structure (outside of the python-chess game tree structure)
+        nodes = [] # (number, fen, eval)
+        edges = [] # e.g. (0, 1)
+        counter = 0 # for counting nodes to label them
+        # append the current node to our data structure (has format node number, fen, centipawn score, wdl score)
+        nodes.append((counter, mainline_node.board().fen(), np.nan, np.nan)) 
 
-engine.quit()
+        # initialize the list of nodes to visit for our search
+        nodes_to_visit = []
+        nodes_to_visit.append((mainline_node, 0, 0)) # append the current node (node, depth, number)
 
-# Save new PGN text to database? Not sure if we really want to do this.
-# TODO
+        # search loop
+        while nodes_to_visit:
+            current_node, current_depth, current_num = nodes_to_visit.pop() # pop off the last node 
+            if current_depth == d: # if we've reached the depth d with this node, we don't need to do anything else with it
+                continue
+            # analyze the current node to get up to k best move options
+            analysis = engine.analyse(current_node.board(), chess.engine.Limit(depth=depth), multipv=k)
+            for pv in analysis: # iterate through each move found
+                if "pv" not in pv.keys(): # if the board state is a mate, we will not have any move options
+                    break
+                counter += 1 # increase the counter so we can give the proper numeric label to this new node
+                move = pv["pv"][0] # get what this move is
+                score = pv["score"].white() # get its score
+                current_node.add_variation(move, comment=f"[%eval {str(score)}]") # add it as a variation to this current node
+                nodes_to_visit.append((current_node[-1], current_depth+1, counter)) # add the most recently added variation to the nodes to visit
+
+                # Add the nodes and edges to the alternate data structure here
+                nodes.append((
+                        counter, 
+                        str(current_node[-1].board().fen()), 
+                        score.score(mate_score=100000),
+                        tuple(score.wdl())
+                            )) 
+                edges.append((current_num, counter))
+
+        landscape.append((nodes, edges))
+    return landscape
