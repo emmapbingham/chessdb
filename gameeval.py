@@ -42,13 +42,16 @@ def landscapeeval(game, engine, k=3, d=2, depth=10):
     Calculate tree of moves and their evaluations for each move in the mainline game.
     engine: the engine we are using for calculation
     game: the chess game object from python-chess library
-    params (total tree size is maximum k**d):
+    params:
     k = 3 # number of branches off each node
     d = 2 # depth of tree
     depth = 10 # depth parameter for stockfish engine
 
     Returns: list of (nodes, edges) of tree for each mainline move.
     Note that scores are all from white's perspective.
+
+    Also note that the total tree size is sum(k**i) from 0 to d
+    and the number of leaf nodes is k**d
     """
     
     landscape = [] # consists of list of tuples of (nodes, edges) for each mainline move
