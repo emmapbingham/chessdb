@@ -10,7 +10,7 @@ import chess
 import numpy as np
 
 
-def gameeval(game, engine, depth=10):
+async def gameeval(game, engine_path, depth=10):
     """
     Calculate evaluations for each move in the mainline game.
     engine: the engine we are using for calculation
@@ -21,23 +21,27 @@ def gameeval(game, engine, depth=10):
     Note that scores are all from white's perspective.
     """
 
+    transport, engine = await chess.engine.popen_uci(engine_path)
+
     centipawns = []
     wdls = []
     for i, mainline_node in enumerate(game.mainline()):
         if mainline_node.is_end(): # break if it's the ending node
             break
         if i == 0: # analyze using empty board if it's the starting node
-            analysis = engine.analyse(chess.Board(), chess.engine.Limit(depth=depth), root_moves=[mainline_node.move])
+            analysis = await engine.analyse(chess.Board(), chess.engine.Limit(depth=depth), root_moves=[mainline_node.move])
         else: # analyze the next move with the current board
-            analysis = engine.analyse(mainline_node.board(), chess.engine.Limit(depth=depth), root_moves=[mainline_node[0].move])
+            analysis = await engine.analyse(mainline_node.board(), chess.engine.Limit(depth=depth), root_moves=[mainline_node[0].move])
         score = analysis["score"].white()
         centipawns.append(score.score(mate_score=100000))
         wdls.append(tuple(score.wdl()))
+    
+    await engine.quit()
 
     return np.asarray(centipawns), np.asarray(wdls)
 
 
-def landscapeeval(game, engine, k=3, d=2, depth=10):
+async def landscapeeval(game, engine_path, k=3, d=2, depth=10):
     """
     Calculate tree of moves and their evaluations for each move in the mainline game.
     engine: the engine we are using for calculation
@@ -53,6 +57,8 @@ def landscapeeval(game, engine, k=3, d=2, depth=10):
     Also note that the total tree size is sum(k**i) from 0 to d
     and the number of leaf nodes is k**d
     """
+
+    transport, engine = await chess.engine.popen_uci(engine_path)
     
     landscape = [] # consists of list of tuples of (nodes, edges) for each mainline move
     for mainline_node in game.mainline():
@@ -76,7 +82,7 @@ def landscapeeval(game, engine, k=3, d=2, depth=10):
             if current_depth == d: # if we've reached the depth d with this node, we don't need to do anything else with it
                 continue
             # analyze the current node to get up to k best move options
-            analysis = engine.analyse(current_node.board(), chess.engine.Limit(depth=depth), multipv=k)
+            analysis = await engine.analyse(current_node.board(), chess.engine.Limit(depth=depth), multipv=k)
             for pv in analysis: # iterate through each move found
                 if "pv" not in pv.keys(): # if the board state is a mate, we will not have any move options
                     break
@@ -97,4 +103,7 @@ def landscapeeval(game, engine, k=3, d=2, depth=10):
                 edges.append((current_num, counter))
 
         landscape.append((nodes, edges))
+
+    await engine.quit()
+
     return landscape
