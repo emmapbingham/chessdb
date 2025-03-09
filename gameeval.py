@@ -63,8 +63,8 @@ def landscapeeval(game, engine, k=3, d=2, depth=10):
         nodes = [] # (number, fen, eval)
         edges = [] # e.g. (0, 1)
         counter = 0 # for counting nodes to label them
-        # append the current node to our data structure (has format node number, fen, centipawn score, wdl score)
-        nodes.append((counter, mainline_node.board().fen(), np.nan, np.nan)) 
+        # append the current node to our data structure (has format node number, fen, depth, centipawn score, wdl score)
+        nodes.append((counter, mainline_node.board().fen(), 0, np.nan, np.nan)) 
 
         # initialize the list of nodes to visit for our search
         nodes_to_visit = []
@@ -90,6 +90,7 @@ def landscapeeval(game, engine, k=3, d=2, depth=10):
                 nodes.append((
                         counter, 
                         str(current_node[-1].board().fen()), 
+                        current_depth + 1,
                         score.score(mate_score=100000),
                         tuple(score.wdl())
                             )) 
