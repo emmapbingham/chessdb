@@ -5,6 +5,7 @@
 
 import sqlite3
 import re
+import time
 
 
 def create_db(cursor):
@@ -164,26 +165,41 @@ def save_games_to_db(cursor, pgn_file):
     Trying to save on RAM here by not opening the whole file at once. I think.
     It's kind of slow though.
     """
+    # filters
+    events = ["Rated Blitz game", "Rated Bullet game", "Rated Rapid game", "Rated Classical game"]
+    time_control = ["60+0", "300+0", "600+0", "1800+0"]
 
     with open(pgn_file, "r") as f:
         previous_line = ""
         game_text = ""
+        game_count = 0
         for line in f:
             game_text += line
             # fetch lines until the end of the game is reached
             # then save that game to the db
             # then 'clear' the game so we can fetch the next game
             if previous_line.startswith("1. "):
-                pgn_dict = build_pgn_dict(game_text)
-                save_game_to_db(cursor, pgn_dict)
-                game_text = ""
+                if not game_count % 87 == 0: # skip a lot of games to get ~1 million
+                    game_text = ""
+                else:
+                    pgn_dict = build_pgn_dict(game_text)
+                    # only save the game to the db if it meets the event and time control filters
+                    if (pgn_dict["Event"] in events) and (pgn_dict["TimeControl"] in time_control):
+                        save_game_to_db(cursor, pgn_dict)
+                    game_text = ""
+                game_count += 1
             previous_line = line
 
 
 if __name__ == "__main__":
-    conn = sqlite3.connect("data.db")
+    start = time.time()
+    conn = sqlite3.connect("/Volumes/Extreme SSD/chessdata/data_smaller_1pct.db")
     cursor = conn.cursor()
     create_db(cursor)
-    save_games_to_db(cursor, "../data/lichess_db_standard_rated_2013-01.pgn")
+    filename = "/Volumes/Extreme SSD/chessdata/lichess_db_standard_rated_2024-12.pgn"
+    save_games_to_db(cursor, filename)
     conn.commit()
     conn.close()
+    end = time.time()
+    print(filename)
+    print(end-start)
